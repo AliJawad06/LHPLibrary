@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { api } from "@/convex/_generated/api";
-import type { Doc } from "@/convex/_generated/dataModel";
-import { audienceLabel, formatDate, languageLabel, topicLabel } from "@/lib/catalog";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { audienceLabel, formatDate, formatDateTime, languageLabel, topicLabel } from "@/lib/catalog";
 import { BookCover } from "./BookCover";
 
 const ERROR_COPY: Record<string, string> = {
@@ -14,6 +14,7 @@ const ERROR_COPY: Record<string, string> = {
   BorrowLimitReached: "You've reached the borrow limit (5 books). Return one to borrow another.",
   DuplicateHold: "You're already in the queue for this title.",
   Unauthenticated: "Please sign in to borrow or place holds.",
+  PickupEventInvalid: "That event has passed — pick another pickup time.",
 };
 
 function errorMessage(err: unknown): string {
@@ -44,10 +45,12 @@ export function BookDetailModal({
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pickupEventId, setPickupEventId] = useState<Id<"events"> | "">("");
 
   // Live copy of the book so availability updates while the dialog is open.
   const liveBook = useQuery(api.books.get, book ? { bookId: book._id } : "skip");
   const current = liveBook ?? book;
+  const events = useQuery(api.events.upcoming, book ? {} : "skip");
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -55,6 +58,7 @@ export function BookDetailModal({
     if (book && !dialog.open) dialog.showModal();
     if (!book && dialog.open) dialog.close();
     setError(null);
+    setPickupEventId("");
   }, [book]);
 
   if (!book || !current) return null;
@@ -96,15 +100,17 @@ export function BookDetailModal({
       );
     }
     if (current.status === "available") {
+      const chosen = events?.find((e) => e._id === pickupEventId);
       return (
         <button
           type="button"
           className="btn btn--primary"
-          disabled={busy}
+          disabled={busy || !chosen}
           onClick={() =>
+            chosen &&
             run(
-              () => borrow({ bookId: current._id }),
-              `“${current.title}” is yours for 14 days. Pick it up at the desk.`,
+              () => borrow({ bookId: current._id, pickupEventId: chosen._id }),
+              `“${current.title}” is yours for 14 days. Pick it up at ${chosen.title}, ${formatDateTime(chosen.start)}.`,
             )
           }
         >
@@ -179,6 +185,36 @@ export function BookDetailModal({
                 </dd>
               </div>
             </dl>
+            {me && !myActiveLoan && current.status === "available" && (
+              <div className="field">
+                <label className="field__label" htmlFor="pickup-event">
+                  Pickup — choose an event
+                </label>
+                {events === undefined ? (
+                  <p className="detail__pickup-note">Loading upcoming events…</p>
+                ) : events.length === 0 ? (
+                  <p className="detail__pickup-note">
+                    No upcoming pickup events on the calendar — contact the desk to
+                    arrange a time.
+                  </p>
+                ) : (
+                  <select
+                    id="pickup-event"
+                    className="field__input"
+                    value={pickupEventId}
+                    onChange={(e) => setPickupEventId(e.target.value as Id<"events"> | "")}
+                  >
+                    <option value="">Select a pickup event…</option>
+                    {events.map((event) => (
+                      <option key={event._id} value={event._id}>
+                        {event.title} — {formatDateTime(event.start)}
+                        {event.location ? ` · ${event.location}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
             {error && <p className="auth__error" role="alert">{error}</p>}
             <div className="detail__actions">
               {me === undefined ? null : me === null ? (

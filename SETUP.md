@@ -26,9 +26,41 @@ npx convex env set GOOGLE_CLIENT_SECRET <your-client-secret>
 ### Google OAuth credentials
 
 1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → Create OAuth client ID → Web application.
-2. Authorized JavaScript origins: `http://localhost:3000`
-3. Authorized redirect URI: `<NEXT_PUBLIC_CONVEX_SITE_URL>/api/auth/callback/google`
-   (the `.convex.site` URL from `.env.local` — auth routes are served by Convex, not Next).
+2. Authorized JavaScript origins: your app origin — `http://localhost:3000` (or whatever
+   port you run on; must match `SITE_URL` exactly).
+3. Authorized redirect URI: `<SITE_URL>/api/auth/callback/google` — the **app's own
+   domain**, e.g. `http://localhost:3000/api/auth/callback/google`. Better Auth builds
+   the redirect URI from its `baseURL` (= `SITE_URL`), and the callback flows through
+   the Next `/api/auth` proxy so session cookies are set on the app domain. Do NOT
+   register the `.convex.site` URL.
+4. For prod, add the prod pair too (e.g. `https://lhp-library.<account>.workers.dev`
+   origin + `.../api/auth/callback/google` redirect), or use a separate prod client.
+
+## 2b. Pickup events (Google Calendar)
+
+Borrowing requires choosing a pickup event, synced hourly from the org's **public**
+Google Calendar:
+
+1. In the same GCP project: **APIs & Services → Enable APIs → Google Calendar API**.
+2. Create an **API key** (Credentials → Create credentials → API key). Restrict it to
+   the Calendar API.
+3. Find the Calendar ID: Google Calendar → calendar Settings → "Integrate calendar" →
+   **Calendar ID** (looks like `…@group.calendar.google.com`). The calendar must be
+   public ("Make available to public").
+4. Set both on the deployment (repeat with `--prod` for production):
+
+```bash
+npx convex env set GOOGLE_CALENDAR_ID <calendar-id>
+npx convex env set GOOGLE_API_KEY <api-key>
+```
+
+5. Initial sync (the hourly cron takes over afterwards):
+
+```bash
+npx convex run events:sync
+```
+
+With no synced events, borrowing is blocked with "contact the desk" copy by design.
 
 ## 3. Seed the catalog
 

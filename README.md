@@ -38,12 +38,17 @@ npx convex env set BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 npx convex env set SITE_URL http://localhost:3000
 npx convex env set GOOGLE_CLIENT_ID <dev-client-id>
 npx convex env set GOOGLE_CLIENT_SECRET <dev-client-secret>
+npx convex env set GOOGLE_CALENDAR_ID <public-calendar-id>
+npx convex env set GOOGLE_API_KEY <calendar-api-key>
 ```
 
-Google credential setup (redirect URI must point at your `.convex.site` domain,
-because auth routes are served by Convex, not Next): see **SETUP.md §2**.
-Email/password sign-in works with no Google credentials, so you can skip Google
-while testing locally.
+Then populate pickup events once (`npx convex run events:sync` — an hourly cron keeps
+them fresh; see SETUP.md §2b for the Calendar API key + calendar ID).
+
+Google credential setup (redirect URI is on the **app's own origin** —
+`<SITE_URL>/api/auth/callback/google` — because the OAuth callback flows through the
+Next `/api/auth` proxy): see **SETUP.md §2**. Email/password sign-in works with no
+Google credentials, so you can skip Google while testing locally.
 
 Seed the catalog (idempotent, 27 titles):
 
@@ -114,12 +119,18 @@ npx convex env set --prod BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 npx convex env set --prod SITE_URL https://library.lhproj.com
 npx convex env set --prod GOOGLE_CLIENT_ID <prod-client-id>
 npx convex env set --prod GOOGLE_CLIENT_SECRET <prod-client-secret>
+npx convex env set --prod GOOGLE_CALENDAR_ID <public-calendar-id>
+npx convex env set --prod GOOGLE_API_KEY <calendar-api-key>
 ```
 
-Create a **separate** Google OAuth client for prod:
+After the first prod deploy, run `npx convex run events:sync --prod` once to populate
+pickup events.
 
-- Authorized JavaScript origin: `https://library.lhproj.com` (your real domain)
-- Authorized redirect URI: `https://<prod-deployment>.convex.site/api/auth/callback/google`
+Create a **separate** Google OAuth client for prod (or add these to the existing one):
+
+- Authorized JavaScript origin: your live app URL (custom domain or
+  `https://lhp-library.<account>.workers.dev`) — must match prod `SITE_URL` exactly
+- Authorized redirect URI: `<that same origin>/api/auth/callback/google`
 
 ### 2. Host the Next.js app (Cloudflare Workers)
 
@@ -171,7 +182,7 @@ npx convex run admin:bootstrapAdmin '{"email": "librarian@lhproj.com"}' --prod
 
 - [ ] `BETTER_AUTH_SECRET` is unique to prod
 - [ ] `SITE_URL` (Convex env) and `NEXT_PUBLIC_SITE_URL` (host env) both match the real domain exactly
-- [ ] Google prod OAuth client uses the prod `.convex.site` redirect URI
+- [ ] Google prod OAuth client registers the live app origin + `<origin>/api/auth/callback/google` redirect URI
 - [ ] Seed ran once; first librarian bootstrapped
 - [ ] Verify: sign-in, borrow, return, hold, and admin gate on the live site
 

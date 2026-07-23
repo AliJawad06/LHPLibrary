@@ -44,6 +44,16 @@ export function formatDate(ms: number): string {
   });
 }
 
+export function formatDateTime(ms: number): string {
+  return new Date(ms).toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function daysUntil(ms: number): number {
   return Math.ceil((ms - Date.now()) / (24 * 60 * 60 * 1000));
 }

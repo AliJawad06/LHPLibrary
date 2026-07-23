@@ -120,10 +120,13 @@ Three load-bearing decisions, everything else follows from them:
 
 ### `middleware.ts`
 
-- Guards `/account` and `/admin` only. **Fails open to "signed out"** (redirect) if the
-  token endpoint is unreachable rather than surfacing a 500 — safe precisely because
-  middleware is UX and Convex functions are the gate. Runs on the default edge runtime,
-  which is what Cloudflare Workers supports.
+- Guards `/account` and `/admin` only, using Better Auth's documented middleware
+  pattern: an **optimistic session-cookie presence check** (`getSessionCookie` from
+  `better-auth/cookies`). No network call and no `next/headers` — neither is reliable
+  in the middleware runtime, and middleware shouldn't block on a round-trip anyway.
+  A present-but-expired cookie passes through; the page's own auth-gated queries and
+  the Convex functions handle real validation. Runs on the default edge runtime, which
+  is what Cloudflare Workers supports.
 
 ### Root layout (`app/layout.tsx` + `components/ConvexClientProvider.tsx`)
 
@@ -149,6 +152,28 @@ Three load-bearing decisions, everything else follows from them:
   apply instantly, not on token refresh. Enforcement point is unchanged.
 - **Seeds are all `available`** — seeding a `loaned` book with no loan row would strand
   it forever, since only a return can free it.
+
+## Pickup events (Google Calendar integration)
+
+Borrowing requires choosing a pickup event (time + place) drawn from the org's public
+Google Calendar. Three decisions shape the integration:
+
+- **Cron-cache, not live fetch.** Convex queries are deterministic and can't call
+  external APIs, so an hourly cron action (`convex/crons.ts` → `events.sync`) pulls
+  upcoming events via the Calendar API (API key, no OAuth — the calendar is public)
+  into an `events` cache table. The dropdown is then a plain reactive
+  `events.upcoming` query like every other read in the app.
+- **Snapshot on borrow.** `loans.borrow` validates the chosen event (exists, in the
+  future) and copies title/time/place onto the loan (`loan.pickup`). Calendar entries
+  can be edited or deleted after the fact; the promise shown to the member shouldn't
+  drift. This also makes the full-replace sync strategy safe — nothing references
+  cache rows after borrow.
+- **Hold-fulfilled loans start without a pickup.** They're created inside the
+  *returner's* mutation, so the new borrower isn't present to choose. My shelf renders
+  a "choose your pickup" prompt on such loans (`loans.setPickup`, ownership-checked).
+
+With an empty events cache, borrowing is blocked with "contact the desk" copy —
+required-pickup was a product decision, not a technical constraint.
 
 ## Design system
 

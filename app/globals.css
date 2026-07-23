@@ -1197,3 +1197,27 @@ select.field__input { appearance: auto; }
 @media (prefers-reduced-motion: reduce) {
   .skeleton-row { animation: none; background: var(--surface); }
 }
+
+/* Pickup selection inside the book detail modal */
+.detail__pickup-note {
+  color: var(--ink-muted);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+}
+
+/* Inline pickup prompt on hold-fulfilled loans (My shelf) */
+.line-item__pickup-prompt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  flex-wrap: wrap;
+}
+.field__input--compact {
+  height: 38px;
+  font-size: var(--fs-meta);
+  max-width: 360px;
+}

@@ -5,7 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { AUDIENCES, LANGUAGES, TOPICS, formatDate, topicLabel } from "@/lib/catalog";
+import { AUDIENCES, LANGUAGES, TOPICS, formatDate, formatDateTime, topicLabel } from "@/lib/catalog";
 import { KhatamMark } from "./ornaments";
 
 type Tab = "catalog" | "loans" | "holds" | "members";
@@ -314,11 +314,11 @@ function LoansTab({ showToast }: { showToast: (m: string) => void }) {
       <div className="table-wrap">
         <table className="table">
           <thead>
-            <tr><th>Book</th><th>Borrower</th><th>Borrowed</th><th>Due</th><th>Status</th><th>Actions</th></tr>
+            <tr><th>Book</th><th>Borrower</th><th>Borrowed</th><th>Due</th><th>Pickup</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody>
             {loans?.length === 0 && (
-              <tr><td colSpan={6}>No loans in this view.</td></tr>
+              <tr><td colSpan={7}>No loans in this view.</td></tr>
             )}
             {loans?.map((loan) => (
               <tr key={loan._id}>
@@ -326,6 +326,11 @@ function LoansTab({ showToast }: { showToast: (m: string) => void }) {
                 <td>{loan.borrower?.name ?? loan.borrower?.email ?? loan.userId}</td>
                 <td>{formatDate(loan.borrowedAt)}</td>
                 <td>{formatDate(loan.dueAt)}{loan.status === "active" && loan.dueAt < Date.now() ? " · overdue" : ""}</td>
+                <td>
+                  {loan.pickup
+                    ? `${loan.pickup.title} · ${formatDateTime(loan.pickup.start)}`
+                    : "—"}
+                </td>
                 <td>
                   <span className={`badge${loan.status === "active" ? " badge--active" : ""}`}>
                     {loan.status}

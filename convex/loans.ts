@@ -10,13 +10,15 @@ import { BORROW_LIMIT, LOAN_PERIOD_MS } from "./lib/constants";
  * members racing for the last copy resolve to exactly one winner (M4).
  */
 export const borrow = mutation({
-  args: { bookId: v.id("books") },
+  args: { bookId: v.id("books"), pickupEventId: v.id("events") },
   handler: async (ctx, args) => {
     const user = await requireUserEnsureProfile(ctx);
 
     const book = await ctx.db.get(args.bookId);
     if (!book) throw new ConvexError("BookNotFound");
     if (book.status !== "available") throw new ConvexError("BookNotAvailable");
+
+    const pickup = await resolvePickup(ctx, args.pickupEventId);
 
     const activeLoans = await ctx.db
       .query("loans")
@@ -33,11 +35,47 @@ export const borrow = mutation({
       status: "active",
       borrowedAt: now,
       dueAt: now + LOAN_PERIOD_MS,
+      pickup,
     });
     await ctx.db.patch(args.bookId, { status: "loaned" });
     return loanId;
   },
 });
+
+/**
+ * Choose (or change) the pickup event on an active loan. Hold-fulfilled loans
+ * are created without a pickup — the member wasn't present — so My shelf
+ * prompts them to pick one here.
+ */
+export const setPickup = mutation({
+  args: { loanId: v.id("loans"), pickupEventId: v.id("events") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const loan = await ctx.db.get(args.loanId);
+    if (!loan) throw new ConvexError("LoanNotFound");
+    if (loan.userId !== user.userId && user.role !== "admin") {
+      throw new ConvexError("NotYourLoan");
+    }
+    if (loan.status !== "active") throw new ConvexError("LoanAlreadyClosed");
+
+    const pickup = await resolvePickup(ctx, args.pickupEventId);
+    await ctx.db.patch(args.loanId, { pickup });
+  },
+});
+
+/** Validate a pickup event and return the snapshot to store on the loan. */
+async function resolvePickup(ctx: MutationCtx, pickupEventId: Id<"events">) {
+  const event = await ctx.db.get(pickupEventId);
+  if (!event || event.start <= Date.now()) {
+    throw new ConvexError("PickupEventInvalid");
+  }
+  return {
+    gcalId: event.gcalId,
+    title: event.title,
+    location: event.location,
+    start: event.start,
+  };
+}
 
 /**
  * Spec §6 — returnBook. Ownership-checked (admin may force via

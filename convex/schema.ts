@@ -43,9 +43,35 @@ export default defineSchema({
     borrowedAt: v.number(),
     dueAt: v.number(),
     returnedAt: v.optional(v.number()),
+    /**
+     * Snapshot of the chosen pickup event, taken at borrow time — calendar
+     * entries can be edited or deleted later, but the promise made to the
+     * member shouldn't drift. Absent on hold-fulfilled loans until the member
+     * chooses (loans.setPickup).
+     */
+    pickup: v.optional(
+      v.object({
+        gcalId: v.string(),
+        title: v.string(),
+        location: v.optional(v.string()),
+        start: v.number(),
+      }),
+    ),
   })
     .index("by_user", ["userId", "status"])
     .index("by_book", ["bookId", "status"]),
+
+  /** Cache of upcoming org events synced hourly from the public Google Calendar. */
+  events: defineTable({
+    gcalId: v.string(),
+    title: v.string(),
+    location: v.optional(v.string()),
+    start: v.number(),
+    end: v.optional(v.number()),
+    syncedAt: v.number(),
+  })
+    .index("by_gcalId", ["gcalId"])
+    .index("by_start", ["start"]),
 
   holds: defineTable({
     bookId: v.id("books"),

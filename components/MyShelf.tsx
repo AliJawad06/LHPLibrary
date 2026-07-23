@@ -4,8 +4,70 @@ import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { daysUntil, formatDate } from "@/lib/catalog";
+import type { Id } from "@/convex/_generated/dataModel";
+import { daysUntil, formatDate, formatDateTime } from "@/lib/catalog";
 import { KhatamMark } from "./ornaments";
+
+/** Hold-fulfilled loans arrive without a pickup; the member chooses one here. */
+function SetPickupPrompt({
+  loanId,
+  onDone,
+}: {
+  loanId: Id<"loans">;
+  onDone: (msg: string) => void;
+}) {
+  const events = useQuery(api.events.upcoming);
+  const setPickup = useMutation(api.loans.setPickup);
+  const [eventId, setEventId] = useState<Id<"events"> | "">("");
+  const [busy, setBusy] = useState(false);
+
+  if (events === undefined) return null;
+  if (events.length === 0) {
+    return (
+      <span className="line-item__meta line-item__meta--due">
+        Pickup: no upcoming events — contact the desk to arrange a time.
+      </span>
+    );
+  }
+  return (
+    <span className="line-item__pickup-prompt">
+      <label className="visually-hidden" htmlFor={`pickup-${loanId}`}>
+        Choose your pickup event
+      </label>
+      <select
+        id={`pickup-${loanId}`}
+        className="field__input field__input--compact"
+        value={eventId}
+        onChange={(e) => setEventId(e.target.value as Id<"events"> | "")}
+      >
+        <option value="">Choose your pickup…</option>
+        {events.map((event) => (
+          <option key={event._id} value={event._id}>
+            {event.title} — {formatDateTime(event.start)}
+            {event.location ? ` · ${event.location}` : ""}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="btn btn--primary btn--sm"
+        disabled={!eventId || busy}
+        onClick={async () => {
+          if (!eventId) return;
+          setBusy(true);
+          try {
+            await setPickup({ loanId, pickupEventId: eventId });
+            onDone("Pickup set — see you there, insha'Allah.");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        Set pickup
+      </button>
+    </span>
+  );
+}
 
 export function MyShelf() {
   const me = useQuery(api.me.get);
@@ -68,6 +130,14 @@ export function MyShelf() {
                         ? "Due today"
                         : `Due ${formatDate(loan.dueAt)} · ${days} day${days === 1 ? "" : "s"} left`}
                   </span>
+                  {loan.pickup ? (
+                    <span className="line-item__meta">
+                      Pickup: {loan.pickup.title} · {formatDateTime(loan.pickup.start)}
+                      {loan.pickup.location ? ` · ${loan.pickup.location}` : ""}
+                    </span>
+                  ) : (
+                    <SetPickupPrompt loanId={loan._id} onDone={showToast} />
+                  )}
                 </div>
                 <div className="line-item__actions">
                   <button
