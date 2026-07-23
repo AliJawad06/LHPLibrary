@@ -1,6 +1,7 @@
 import { query } from "./_generated/server";
 import { authComponent } from "./auth";
 import { requireUser } from "./lib/authz";
+import { attachCoverUrl } from "./lib/covers";
 
 /**
  * Current user + role for client-side UI gating (nav links, admin button).
@@ -42,10 +43,13 @@ export const loans = query({
       .take(25);
     const withBooks = async (rows: typeof active) =>
       Promise.all(
-        rows.map(async (loan) => ({
-          ...loan,
-          book: await ctx.db.get(loan.bookId),
-        })),
+        rows.map(async (loan) => {
+          const book = await ctx.db.get(loan.bookId);
+          return {
+            ...loan,
+            book: book ? await attachCoverUrl(ctx, book) : null,
+          };
+        }),
       );
     return {
       active: await withBooks(active),
@@ -71,11 +75,12 @@ export const holds = query({
           .order("asc")
           .collect();
         const position = queue.findIndex((h) => h._id === hold._id) + 1;
+        const book = await ctx.db.get(hold.bookId);
         return {
           ...hold,
           position,
           queueLength: queue.length,
-          book: await ctx.db.get(hold.bookId),
+          book: book ? await attachCoverUrl(ctx, book) : null,
         };
       }),
     );

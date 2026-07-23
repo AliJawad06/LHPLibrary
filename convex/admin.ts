@@ -26,8 +26,16 @@ const bookFields = {
 
 // ---- Catalog CRUD (A1) ----------------------------------------------------
 
+export const generateCoverUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    return ctx.storage.generateUploadUrl();
+  },
+});
+
 export const createBook = mutation({
-  args: bookFields,
+  args: { ...bookFields, coverStorageId: v.optional(v.id("_storage")) },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     return ctx.db.insert("books", { ...args, status: "available" });
@@ -42,12 +50,22 @@ export const updateBook = mutation({
         Object.entries(bookFields).map(([k, val]) => [k, v.optional(val)]),
       ) as Record<string, ReturnType<typeof v.optional>>,
     ),
+    coverStorageId: v.optional(v.id("_storage")),
+    removeCover: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     const book = await ctx.db.get(args.bookId);
     if (!book) throw new ConvexError("BookNotFound");
-    await ctx.db.patch(args.bookId, args.patch);
+    if (args.removeCover) {
+      if (book.coverStorageId) await ctx.storage.delete(book.coverStorageId);
+      await ctx.db.patch(args.bookId, { ...args.patch, coverStorageId: undefined });
+    } else if (args.coverStorageId !== undefined) {
+      if (book.coverStorageId) await ctx.storage.delete(book.coverStorageId);
+      await ctx.db.patch(args.bookId, { ...args.patch, coverStorageId: args.coverStorageId });
+    } else {
+      await ctx.db.patch(args.bookId, args.patch);
+    }
   },
 });
 
@@ -55,11 +73,14 @@ export const removeBook = mutation({
   args: { bookId: v.id("books") },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
+    const book = await ctx.db.get(args.bookId);
+    if (!book) throw new ConvexError("BookNotFound");
     const activeLoan = await ctx.db
       .query("loans")
       .withIndex("by_book", (q) => q.eq("bookId", args.bookId).eq("status", "active"))
       .first();
     if (activeLoan) throw new ConvexError("BookHasActiveLoan");
+    if (book.coverStorageId) await ctx.storage.delete(book.coverStorageId);
     // Clear any waiting holds so no queue points at a dead book.
     const waiting = await ctx.db
       .query("holds")

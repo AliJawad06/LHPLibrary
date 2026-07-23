@@ -101,12 +101,30 @@ function CatalogTab({ showToast }: { showToast: (m: string) => void }) {
   const createBook = useMutation(api.admin.createBook);
   const updateBook = useMutation(api.admin.updateBook);
   const removeBook = useMutation(api.admin.removeBook);
+  const generateCoverUploadUrl = useMutation(api.admin.generateCoverUploadUrl);
 
   const [editing, setEditing] = useState<Id<"books"> | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [error, setError] = useState<string | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null);
+  const [existingCoverUrl, setExistingCoverUrl] = useState<string | null>(null);
+  const [removingCover, setRemovingCover] = useState(false);
 
-  const startEdit = (book: Doc<"books">) => {
+  const clearCoverFile = () => {
+    if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
+    setCoverFile(null);
+    setCoverPreviewUrl(null);
+  };
+
+  const pickCoverFile = (file: File) => {
+    clearCoverFile();
+    setCoverFile(file);
+    setCoverPreviewUrl(URL.createObjectURL(file));
+    setRemovingCover(false);
+  };
+
+  const startEdit = (book: Doc<"books"> & { coverUrl?: string | null }) => {
     setEditing(book._id);
     setForm({
       title: book.title, author: book.author,
@@ -115,6 +133,10 @@ function CatalogTab({ showToast }: { showToast: (m: string) => void }) {
       tint: book.tint ?? TINTS[0],
       staffPick: book.staffPick, isNew: book.isNew, description: book.description,
     });
+    setExistingCoverUrl(book.coverUrl ?? null);
+    setCoverFile(null);
+    setCoverPreviewUrl(null);
+    setRemovingCover(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -122,11 +144,32 @@ function CatalogTab({ showToast }: { showToast: (m: string) => void }) {
     setEditing(null);
     setForm({ ...EMPTY_FORM });
     setError(null);
+    clearCoverFile();
+    setExistingCoverUrl(null);
+    setRemovingCover(false);
   };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    let coverStorageId: Id<"_storage"> | undefined;
+    if (coverFile) {
+      try {
+        const uploadUrl = await generateCoverUploadUrl();
+        const res = await fetch(uploadUrl, {
+          method: "POST",
+          headers: { "Content-Type": coverFile.type },
+          body: coverFile,
+        });
+        const data = await res.json() as { storageId: Id<"_storage"> };
+        coverStorageId = data.storageId;
+      } catch {
+        setError("Cover photo upload failed — please try again.");
+        return;
+      }
+    }
+
     const fields = {
       title: form.title.trim(),
       author: form.author.trim(),
@@ -142,11 +185,16 @@ function CatalogTab({ showToast }: { showToast: (m: string) => void }) {
     };
     try {
       if (editing) {
-        await updateBook({ bookId: editing, patch: fields });
-        showToast(`Updated “${fields.title}”.`);
+        await updateBook({
+          bookId: editing,
+          patch: fields,
+          coverStorageId,
+          removeCover: removingCover || undefined,
+        });
+        showToast(`Updated "${fields.title}".`);
       } else {
-        await createBook(fields);
-        showToast(`Added “${fields.title}” to the catalog.`);
+        await createBook({ ...fields, coverStorageId });
+        showToast(`Added "${fields.title}" to the catalog.`);
       }
       reset();
     } catch (err) {
@@ -211,6 +259,52 @@ function CatalogTab({ showToast }: { showToast: (m: string) => void }) {
               </select>
             </div>
             <div className="field field--wide">
+              <span className="field__label">Cover photo (optional)</span>
+              {coverPreviewUrl ? (
+                <div className="cover-preview">
+                  <img src={coverPreviewUrl} alt="Cover preview" className="cover-preview__img" />
+                  <div className="cover-preview__actions">
+                    <span style={{ fontSize: "var(--fs-meta)", color: "var(--ink-muted)" }}>
+                      {coverFile?.name}
+                    </span>
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={clearCoverFile}>
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              ) : existingCoverUrl && !removingCover ? (
+                <div className="cover-preview">
+                  <img src={existingCoverUrl} alt="Current cover" className="cover-preview__img" />
+                  <div className="cover-preview__actions">
+                    <label className="btn btn--ghost btn--sm" style={{ cursor: "pointer" }}>
+                      Replace
+                      <input type="file" accept="image/*" capture="environment"
+                        style={{ display: "none" }}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) pickCoverFile(f); }} />
+                    </label>
+                    <button type="button" className="btn btn--danger btn--sm"
+                      onClick={() => setRemovingCover(true)}>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : removingCover ? (
+                <p className="cover-preview__note">
+                  Cover will be removed on save.{" "}
+                  <button type="button" className="btn--link" onClick={() => setRemovingCover(false)}>
+                    Undo
+                  </button>
+                </p>
+              ) : (
+                <label className="cover-upload">
+                  <input type="file" accept="image/*" capture="environment"
+                    style={{ display: "none" }}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) pickCoverFile(f); }} />
+                  <span className="btn btn--ghost btn--sm">Add cover photo</span>
+                </label>
+              )}
+            </div>
+            <div className="field field--wide">
               <label className="field__label" htmlFor="bf-desc">Description</label>
               <textarea id="bf-desc" className="field__input" required value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })} />
@@ -271,10 +365,10 @@ function CatalogTab({ showToast }: { showToast: (m: string) => void }) {
                         type="button"
                         className="btn btn--danger btn--sm"
                         onClick={async () => {
-                          if (!confirm(`Delete “${book.title}” from the catalog?`)) return;
+                          if (!confirm(`Delete "${book.title}" from the catalog?`)) return;
                           try {
                             await removeBook({ bookId: book._id });
-                            showToast(`Deleted “${book.title}”.`);
+                            showToast(`Deleted "${book.title}".`);
                           } catch (err) {
                             alert(errText(err));
                           }
@@ -343,7 +437,7 @@ function LoansTab({ showToast }: { showToast: (m: string) => void }) {
                       className="btn btn--ghost btn--sm"
                       onClick={async () => {
                         await forceReturn({ loanId: loan._id });
-                        showToast(`Force-returned “${loan.book?.title}”.`);
+                        showToast(`Force-returned "${loan.book?.title}".`);
                       }}
                     >
                       Force return

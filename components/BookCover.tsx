@@ -6,21 +6,30 @@ function titleSizeClass(title: string): string {
   return "";
 }
 
-/**
- * Typography-forward tinted placeholder panel. Real cover photography (shot
- * borderless, with its own background) drops into this slot later without
- * changing the cell chrome.
- */
 export function BookCover({
   book,
   detail = false,
 }: {
-  book: Pick<Doc<"books">, "title" | "author" | "tint">;
+  book: Pick<Doc<"books">, "title" | "author" | "tint"> & { coverUrl?: string | null };
   detail?: boolean;
 }) {
+  const cls = detail ? "book__cover detail__cover-panel" : "book__cover";
+
+  if (book.coverUrl) {
+    return (
+      <div className={cls}>
+        <img
+          src={book.coverUrl}
+          alt={`Cover of ${book.title}`}
+          className="book__cover-img"
+        />
+      </div>
+    );
+  }
+
   return (
     <div
-      className={detail ? "book__cover detail__cover-panel" : "book__cover"}
+      className={cls}
       style={{ ["--tint" as string]: `var(${book.tint ?? "--tint-slate"})` }}
     >
       <span className={`book__cover-title ${titleSizeClass(book.title)}`}>

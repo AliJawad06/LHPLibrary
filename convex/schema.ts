@@ -23,6 +23,8 @@ export default defineSchema({
     language: v.string(),
     audience: v.union(v.literal("child"), v.literal("teen"), v.literal("adult")),
     tint: v.optional(v.string()),
+    /** Uploaded cover photo; absent → typography-forward tinted panel. */
+    coverStorageId: v.optional(v.id("_storage")),
     staffPick: v.boolean(),
     isNew: v.boolean(),
     description: v.string(),

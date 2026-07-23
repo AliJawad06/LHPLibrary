@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
+import { attachCoverUrl, attachCoverUrls } from "./lib/covers";
 
 /**
  * Public catalog queries — no auth required (spec M2: browse without sign-in).
@@ -31,12 +32,13 @@ export const list = query({
     } else {
       books = await ctx.db.query("books").collect();
     }
-    return books.filter(
+    const filtered = books.filter(
       (b) =>
         (args.language === undefined || b.language === args.language) &&
         (args.audience === undefined || b.audience === args.audience) &&
         (args.status === undefined || b.status === args.status),
     );
+    return attachCoverUrls(ctx, filtered);
   },
 });
 
@@ -47,7 +49,7 @@ export const search = query({
     language: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return ctx.db
+    const books = await ctx.db
       .query("books")
       .withSearchIndex("search_title", (q) => {
         let s = q.search("title", args.query);
@@ -56,12 +58,15 @@ export const search = query({
         return s;
       })
       .take(50);
+    return attachCoverUrls(ctx, books);
   },
 });
 
 export const get = query({
   args: { bookId: v.id("books") },
   handler: async (ctx, args) => {
-    return ctx.db.get(args.bookId);
+    const book = await ctx.db.get(args.bookId);
+    if (!book) return null;
+    return attachCoverUrl(ctx, book);
   },
 });
